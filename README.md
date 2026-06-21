@@ -6,15 +6,21 @@ Source code is kept private. This repository only provides the installer script 
 
 ## Install
 
+```bash
 curl -fsSL https://raw.githubusercontent.com/alpian9890/sfc-main-cli/main/scripts/install.sh | sh
+```
 
 Alternative:
 
+```bash
 wget -qO- https://raw.githubusercontent.com/alpian9890/sfc-main-cli/main/scripts/install.sh | sh
+```
 
 ## Update
 
+```bash
 seofast update
+```
 
 ## Release Assets
 
