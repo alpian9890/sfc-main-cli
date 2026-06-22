@@ -219,6 +219,28 @@ setup_player_wizard() {
   esac
 }
 
+maybe_restore_backup() {
+  if [ ! -r /dev/tty ]; then
+    return 0
+  fi
+  cfg_dir="$(seofast_config_dir)"
+  has_backup="0"
+  for dir in "${cfg_dir}/backups" "${HOME}/seofast-backups" "${HOME}/.config/seofast-chromium-cli/backups"; do
+    if [ -d "$dir" ] && find "$dir" -type f \( -name "*.tar.gz" -o -name "*.tgz" -o -name "*.zip" -o -name "*.json" \) 2>/dev/null | head -n 1 | grep -q .; then
+      has_backup="1"
+      break
+    fi
+  done
+  if [ "$has_backup" != "1" ]; then
+    return 0
+  fi
+  echo
+  echo "Backup data SeoFast terdeteksi."
+  if ask_yes_no "Restore backup sekarang sebelum setup baru?" "y"; then
+    "${INSTALL_DIR}/${BIN_NAME}" restore || true
+  fi
+}
+
 print_setup_summary() {
   cfg_dir="$(seofast_config_dir)"
   telegram_file="${cfg_dir}/telegram.json"
@@ -644,6 +666,8 @@ cleanup_legacy_units
 echo "Verifikasi:"
 "${INSTALL_DIR}/${BIN_NAME}" --help >/dev/null
 echo "SeoFast terpasang: ${INSTALL_DIR}/${BIN_NAME}"
+
+maybe_restore_backup
 
 if "${INSTALL_DIR}/${BIN_NAME}" fingerprint show >/dev/null 2>&1; then
   echo "Fingerprint sudah tersedia."
