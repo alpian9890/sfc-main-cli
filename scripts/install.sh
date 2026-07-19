@@ -131,31 +131,6 @@ seofast_config_dir() {
   fi
 }
 
-json_string_value() {
-  file="$1"
-  key="$2"
-  [ -f "$file" ] || return 0
-  sed -n \
-    -e "s/^[[:space:]]*\"${key}\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\"[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p" \
-    -e "s/^[[:space:]]*\"${key}\"[[:space:]]*:[[:space:]]*\([^,}][^,}]*\)[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p" \
-    "$file" | head -n 1
-}
-
-mask_secret_value() {
-  value="$1"
-  if [ -z "$value" ]; then
-    echo "-"
-    return 0
-  fi
-  if [ "${#value}" -le 8 ]; then
-    echo "********"
-    return 0
-  fi
-  prefix="$(printf "%s" "$value" | cut -c 1-4)"
-  suffix="$(printf "%s" "$value" | awk '{ print substr($0, length($0) - 3) }')"
-  echo "${prefix}...${suffix}"
-}
-
 setup_credentials_wizard() {
   echo
   echo "Siapkan credentials seofast?"
@@ -226,7 +201,7 @@ maybe_restore_backup() {
   cfg_dir="$(seofast_config_dir)"
   has_backup="0"
   for dir in "${cfg_dir}/backups" "${HOME}/seofast-backups" "${HOME}/.config/seofast-chromium-cli/backups"; do
-    if [ -d "$dir" ] && find "$dir" -type f \( -name "*.tar.gz" -o -name "*.tgz" -o -name "*.zip" -o -name "*.json" \) 2>/dev/null | head -n 1 | grep -q .; then
+    if [ -d "$dir" ] && find "$dir" -type f \( -name "*.sfb" -o -name "*.tar.gz" -o -name "*.tgz" -o -name "*.zip" -o -name "*.json" \) 2>/dev/null | head -n 1 | grep -q .; then
       has_backup="1"
       break
     fi
@@ -237,7 +212,10 @@ maybe_restore_backup() {
   echo
   echo "Backup data SeoFast terdeteksi."
   if ask_yes_no "Restore backup sekarang sebelum setup baru?" "y"; then
-    "${INSTALL_DIR}/${BIN_NAME}" restore || true
+    if ! "${INSTALL_DIR}/${BIN_NAME}" restore; then
+      echo "Error: restore backup gagal. Setup dihentikan agar data lama tidak tertimpa." >&2
+      return 1
+    fi
   fi
 }
 
@@ -253,79 +231,38 @@ print_setup_summary() {
   echo "Ringkasan setup:"
   echo "Config dir: ${cfg_dir}"
 
+  echo
+  echo "Telegram:"
   if [ -f "$telegram_file" ]; then
-    bot_token="$(json_string_value "$telegram_file" "bot_token")"
-    notify_time="$(json_string_value "$telegram_file" "time")"
-    notify_timezone="$(json_string_value "$telegram_file" "timezone")"
-    scheduler="$(json_string_value "$telegram_file" "scheduler")"
-    echo "Telegram BOT_TOKEN: $(mask_secret_value "$bot_token")"
-    echo "Telegram file: ${telegram_file}"
-    login_chat_id="$(json_string_value "$telegram_file" "login_chat_id")"
-    login_thread_id="$(json_string_value "$telegram_file" "login_thread_id")"
-    earnings_chat_id="$(json_string_value "$telegram_file" "earnings_chat_id")"
-    earnings_thread_id="$(json_string_value "$telegram_file" "earnings_thread_id")"
-    log_chat_id="$(json_string_value "$telegram_file" "log_chat_id")"
-    log_thread_id="$(json_string_value "$telegram_file" "log_thread_id")"
-    echo "Login target: ${login_chat_id:-"-"}${login_thread_id:+ / thread ${login_thread_id}}"
-    echo "Earnings target: ${earnings_chat_id:-"-"}${earnings_thread_id:+ / thread ${earnings_thread_id}}"
-    echo "Log target: ${log_chat_id:-"-"}${log_thread_id:+ / thread ${log_thread_id}}"
-    echo "Jadwal notifikasi: ${notify_time:-06:00} ${notify_timezone:-Asia/Jakarta}"
-    echo "Scheduler notifikasi: ${scheduler:-manual}"
+    "${INSTALL_DIR}/${BIN_NAME}" telegram status || true
   else
     echo "Telegram: belum diset"
-    echo "Telegram file: ${telegram_file}"
   fi
+  echo "Telegram file: ${telegram_file}"
 
+  echo
+  echo "Credentials SeoFast:"
   if [ -f "$credentials_file" ]; then
-    email="$(json_string_value "$credentials_file" "email")"
-    password="$(json_string_value "$credentials_file" "password")"
-    echo "Credentials seofast: tersedia"
-    echo "Credentials email: ${email:-"-"}"
-    echo "Credentials password: $(mask_secret_value "$password")"
-    echo "Credentials file: ${credentials_file}"
+    "${INSTALL_DIR}/${BIN_NAME}" credentials status || true
   else
-    echo "Credentials seofast: belum diset"
-    echo "Credentials file: ${credentials_file}"
+    echo "Credentials: belum diset."
   fi
+  echo "Credentials file: ${credentials_file}"
 
-  if [ -f "$gmail_file" ]; then
-    google_email="$(json_string_value "$gmail_file" "google_email")"
-    echo "google_email: ${google_email:-"-"}"
-    echo "Gmail file: ${gmail_file}"
-  else
-    fallback_email="-"
-    if [ -f "$credentials_file" ]; then
-      fallback_email="$(json_string_value "$credentials_file" "email")"
-    fi
-    echo "google_email: fallback dari email login/credentials (${fallback_email:-"-"})"
-    echo "Gmail file: ${gmail_file}"
-  fi
+  echo
+  echo "Google email payload:"
+  "${INSTALL_DIR}/${BIN_NAME}" gmail status || true
+  echo "Gmail file: ${gmail_file}"
 
-  if [ -f "$devtools_file" ]; then
-    devtools_mode="$(json_string_value "$devtools_file" "mode")"
-    devtools_port="$(json_string_value "$devtools_file" "port")"
-    devtools_bind="$(json_string_value "$devtools_file" "bind")"
-    devtools_host="$(json_string_value "$devtools_file" "public_host")"
-    echo "DevTools: ${devtools_mode:-off}"
-    echo "DevTools port: ${devtools_port:-9222}"
-    echo "DevTools bind: ${devtools_bind:-127.0.0.1}"
-    echo "DevTools public host: ${devtools_host:-127.0.0.1}"
-    echo "DevTools file: ${devtools_file}"
-  else
-    echo "DevTools: off"
-    echo "DevTools file: ${devtools_file}"
-  fi
+  echo
+  echo "DevTools:"
+  "${INSTALL_DIR}/${BIN_NAME}" devtools status || true
+  echo "DevTools file: ${devtools_file}"
 
-  if [ -f "$player_file" ]; then
-    player_browser="$(json_string_value "$player_file" "browser")"
-    player_path="$(json_string_value "$player_file" "path")"
-    echo "Player browser: ${player_browser:-"-"}"
-    echo "Player path: ${player_path:-"-"}"
-    echo "Player file: ${player_file}"
-  else
-    echo "Player browser: default chrome-headless-shell"
-    echo "Player file: ${player_file}"
-  fi
+  echo
+  echo "Player:"
+  "${INSTALL_DIR}/${BIN_NAME}" player status || true
+  echo "Player file: ${player_file}"
 }
 
 find_chrome_headless_shell() {
@@ -669,6 +606,11 @@ echo "SeoFast terpasang: ${INSTALL_DIR}/${BIN_NAME}"
 
 maybe_restore_backup
 
+echo "Menyiapkan secure storage..."
+"${INSTALL_DIR}/${BIN_NAME}" security migrate
+"${INSTALL_DIR}/${BIN_NAME}" security verify >/dev/null
+echo "Secure storage: valid"
+
 if "${INSTALL_DIR}/${BIN_NAME}" fingerprint show >/dev/null 2>&1; then
   echo "Fingerprint sudah tersedia."
 else
@@ -677,8 +619,11 @@ else
 fi
 
 setup_player_wizard
-player_file="$(seofast_config_dir)/player.json"
-chrome_path="$(json_string_value "$player_file" "path")"
+player_status="$("${INSTALL_DIR}/${BIN_NAME}" player status 2>/dev/null || true)"
+chrome_path="$(printf "%s\n" "$player_status" | sed -n "s/^Executable: //p" | head -n 1)"
+if [ "$chrome_path" = "tidak ditemukan" ]; then
+  chrome_path=""
+fi
 if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
   export SEOFAST_CHROME_PATH="$chrome_path"
 else
